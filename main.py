@@ -49,7 +49,8 @@ def parse_start_time_with_offset(start_date, gmt_offset):
     return start_time - offset
 
 # Function to find the next session without a path
-def get_next_session_without_path(data):
+def get_next_session_without_path():
+    data = fetch_index_json(URL)
     now = datetime.utcnow()
     for meeting in data.get("Meetings", []):
         for session in meeting.get("Sessions", []):
@@ -104,10 +105,12 @@ def monitor_session_path():
         for meeting in index_data.get("Meetings", []):
             for session in meeting.get("Sessions", []):
                 session_start_time = parse_start_time_with_offset(session['StartDate'], session['GmtOffset'])
+                print(session_start_time, now, session_start_time > now, 'Path' not in session)
                 if session_start_time > now and 'Path' not in session:
                     next_session = session
                     next_meeting = meeting
                     next_start_time = session_start_time 
+                    break
             if next_session:
                 break
         
@@ -122,15 +125,16 @@ def monitor_session_path():
                 "meeting_key": next_meeting['Key'],
                 "session_key": next_session['Key']
             }
+            return result
         else:
             if time_to_start > 3600:
                 sleep_interval = 600
             elif time_to_start > 600:
                 sleep_interval = 120
             else:
-                sleep_interval = 30
+                sleep_interval = 10
             
-            print(f"Session {next_session['Name']} starting at {next_start_time}, no path yet. Checking again in {sleep_interval // 60} minutes.")
+            print(f"Session {next_session['Name']} starting at {next_start_time}, no path yet. Checking again in {sleep_interval} seconds.")
             time.sleep(sleep_interval)
 
 # Function to process a data chunk
@@ -189,8 +193,8 @@ def insert_rows_into_db(rows):
 # Main function to start the process
 def main():
     # session = get_latest_session_with_path()
-    session = get_next_session_without_path()
-    print(session)
+    session = monitor_session_path()
+    print("sessionnn", session)
     if session.get('path'):
         url = f'https://livetiming.formula1.com/static/{session.get('path')}CarData.z.jsonStream'
         print(url)
