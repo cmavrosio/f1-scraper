@@ -102,6 +102,7 @@ def monitor_session_path():
         next_meeting = None 
         next_start_time = None
         now = datetime.utcnow()
+        
         for meeting in index_data.get("Meetings", []):
             for session in meeting.get("Sessions", []):
                 session_start_time = parse_start_time_with_offset(session['StartDate'], session['GmtOffset'])
@@ -111,14 +112,17 @@ def monitor_session_path():
                     next_meeting = meeting
                     next_start_time = session_start_time 
                     break
+                elif session_start_time <= now and 'Path' not in session and session_start_time.date() == now.date():
+                    # If the session is today and should have started but the path is not yet available
+                    next_session = session
+                    next_meeting = meeting
+                    next_start_time = session_start_time
+                    break
+            
             if next_session:
                 break
         
-                
-        
-        time_to_start = (next_start_time - datetime.utcnow()).total_seconds()
-        
-        if 'Path' in next_session:
+        if next_session and 'Path' in next_session:
             print(f"Session path found: {next_session['Path']}")
             result = {
                 "path": next_session['Path'],
@@ -127,15 +131,25 @@ def monitor_session_path():
             }
             return result
         else:
-            if time_to_start > 3600:
-                sleep_interval = 600
-            elif time_to_start > 600:
-                sleep_interval = 120
+            if next_start_time:
+                time_to_start = (next_start_time - now).total_seconds()
+                if next_start_time.date() == now.date() and next_start_time <= now:
+                    # Session should have started but path is not available yet, check every 5 seconds
+                    sleep_interval = 5
+                elif time_to_start > 3600:
+                    sleep_interval = 600
+                elif time_to_start > 600:
+                    sleep_interval = 120
+                else:
+                    sleep_interval = 10
+                
+                print(f"Session {next_session['Name']} starting at {next_start_time}, no path yet. Checking again in {sleep_interval} seconds.")
+                time.sleep(sleep_interval)
             else:
-                sleep_interval = 10
-            
-            print(f"Session {next_session['Name']} starting at {next_start_time}, no path yet. Checking again in {sleep_interval} seconds.")
-            time.sleep(sleep_interval)
+                # If no session is found, wait and retry in 1 minute
+                print("No upcoming session found. Retrying in 1 minute...")
+                time.sleep(60)
+
 
 # Function to process a data chunk
 def process_chunk(chunk, session_key=1, meeting_key=1):
@@ -192,9 +206,9 @@ def insert_rows_into_db(rows):
 
 # Main function to start the process
 def main():
-    # session = get_latest_session_with_path()
+    session = get_latest_session_with_path()
     session = monitor_session_path()
-    print("sessionnn", session)
+    # print("sessionnn", session)
     if session.get('path'):
         url = f'https://livetiming.formula1.com/static/{session.get('path')}CarData.z.jsonStream'
         print(url)
